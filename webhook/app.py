@@ -89,56 +89,106 @@ def run_tests(django_project_path):
     except subprocess.CalledProcessError as e:
         print(f"Error running tests: {e}")
 
+#suceess in this we get comment and we can see live report 
 
 def push_results(pr_number):
-    # GitHub API details
-    results_repo = "kartikvermaa/tests-repo"
-    branch = "gh-pages"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-
-    # Path to the HTML coverage report
-    htmlcov_path = "/tmp/django-repo/inventory/htmlcov/index.html"
-
-    if not os.path.exists(htmlcov_path):
-        print("No coverage report generated.")
-        return
-
-    # Read the index.html file and encode it
-    with open(htmlcov_path, "rb") as file:
-        content = base64.b64encode(file.read()).decode("utf-8")
-
-    # Define the path in the GitHub repo
-    github_file_path = f"pr-{pr_number}/index.html"
-    url = f"https://api.github.com/repos/{results_repo}/contents/{github_file_path}"
-
-    # Prepare the payload for uploading the file
-    data = {
-        "message": f"Add coverage report for PR #{pr_number}",
-        "content": content,
-        "branch": branch
-    }
-
-    # Send the request to create/update the file
-    response = requests.put(url, headers=headers, json=data)
-    if response.status_code in [201, 200]:
-        print(f"File {github_file_path} pushed successfully.")
+    # Directory where the tests repo will be cloned
+    tests_repo_dir = "/tmp/tests-repo"
+    
+    # Create the directory if it doesn't exist
+    if os.path.exists(tests_repo_dir):
+        subprocess.run(["rm", "-rf", tests_repo_dir])
+    
+    try:
+        # Clone the tests repo
+        git.Repo.clone_from(TESTS_REPO, tests_repo_dir, branch="gh-pages")
+        print("Tests repository cloned successfully.")
         
-        # Construct the URL for the uploaded file
-        file_url = f"https://kartikvermaa.github.io/tests-repo/{github_file_path}"
+        # Copy index.html from htmlcov to tests repo
+        index_html_source = os.path.join("/tmp/django-repo/inventory/htmlcov/index.html")
+        index_html_destination = os.path.join(tests_repo_dir, "index.html")
         
-        # Comment on the PR with the URL to the coverage report
-        comment_url = f"https://api.github.com/repos/{results_repo}/issues/{pr_number}/comments"
-        comment_data = {
-            "body": f"Coverage and test reports available [here]({file_url})"
-        }
-
-        comment_response = requests.post(comment_url, headers=headers, json=comment_data)
-        if comment_response.status_code == 201:
-            print("Comment added to the PR successfully.")
+        if os.path.exists(index_html_source):
+            subprocess.run(["cp", index_html_source, index_html_destination])
+            print("index.html copied to tests repo.")
         else:
-            print(f"Failed to add comment: {comment_response.status_code} - {comment_response.text}")
-    else:
-        print(f"Failed to push {github_file_path}: {response.status_code} - {response.text}")
+            print("index.html not found in coverage report.")
+            return
 
+        # Commit and push the changes to gh-pages branch
+        repo = git.Repo(tests_repo_dir)
+        repo.index.add(["index.html"])
+        repo.index.commit("Update coverage report")
+        repo.remotes.origin.push("gh-pages")
+        print("Coverage report pushed to tests repo successfully.")
+        
+        # Construct the URL to the index.html file in GitHub Pages
+        report_url = f"https://kartikvermaa.github.io/tests-repo/index.html"
+        
+        # Post a comment on the PR with the URL to the report
+        post_comment(pr_number, report_url)
+
+    except Exception as e:
+        print(f"Error in push_results: {e}")
+
+def post_comment(pr_number, report_url):
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    
+    comment_body = f"Coverage report available at: {report_url}"
+    comment_url = f"https://api.github.com/repos/rtiwari13/inventory-management-application/issues/{pr_number}/comments"
+    
+    response = requests.post(comment_url, json={"body": comment_body}, headers=headers)
+    
+    if response.status_code == 201:
+        print("Comment posted successfully.")
+    else:
+        print(f"Failed to post comment: {response.status_code} - {response.text}")
+
+
+
+ #success
+# def push_results(pr_number):
+#     results_repo_dir = "/tmp/tests-repo"
+#     if os.path.exists(results_repo_dir):
+#         subprocess.run(["rm", "-rf", results_repo_dir])
+
+#     try:
+#         # Clone the test results repo
+#         git.Repo.clone_from(TESTS_REPO, results_repo_dir)
+#         print("Tests repo cloned successfully.")
+        
+#         # Copy coverage report
+#         subprocess.run(["cp", "-r", "/tmp/django-repo/inventory/htmlcov/index.html", f"{results_repo_dir}/pr-{pr_number}"])
+        
+#         # Commit and push results
+#         repo = git.Repo(results_repo_dir)
+#         repo.git.add(A=True)
+#         repo.index.commit(f"Add coverage report for PR #{pr_number}")
+#         repo.remote("origin").push()
+#         print("Coverage report pushed successfully.")
+        
+#         # Comment on the PR with a link to the coverage report
+#         comment_url = f"https://api.github.com/repos/rtiwari13/inventory-management-application/issues/{pr_number}/comments"
+#         headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+#         data = {
+#             "body": f"Coverage and test reports available [here](https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/index.html)"
+#         }
+#         response = requests.post(comment_url, headers=headers, json=data)
+#         if response.status_code == 201:
+#             print("Comment added to the PR successfully.")
+#         else:
+#             print(f"Failed to add comment: {response.status_code} - {response.text}")
+#     except Exception as e:
+#         print(f"Error processing test results: {e}")
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
+
+
+
+
+
+
+
