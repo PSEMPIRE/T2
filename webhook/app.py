@@ -26,6 +26,7 @@ def webhook_listener():
 
 def handle_pr(pr_url, pr_number):
     repo_dir = "/tmp/django-repo"
+    #print(repo_dir)
     if os.path.exists(repo_dir):
         subprocess.run(["rm", "-rf", repo_dir])
 
@@ -33,27 +34,46 @@ def handle_pr(pr_url, pr_number):
         # Clone the private Django repo
         git.Repo.clone_from(DJANGO_REPO, repo_dir)
         print("Repository cloned successfully.")
+        django_project_path = os.path.join(repo_dir, "inventory")
+       
+        # requirements_path = os.path.join(repo_dir, "requirements.txt")
+        # if os.path.exists(requirements_path):
+        #     print("Installing requirements...")
+        #     subprocess.run(["pip", "install", "-r", requirements_path], check=True)
+        #     print("Requirements installed successfully.")
+        # else:
+        #     print("requirements.txt not found.")
+        # Run tests and collect coverage report
+        run_tests(django_project_path)
+        # Push test results and comment on the PR
+        push_results(pr_number)
     except Exception as e:
         print(f"Error cloning repository: {e}")
         return jsonify({"message": "Failed to clone repository"}), 500
-
-    # Run tests and collect coverage report
-    run_tests(repo_dir)
-    # Push test results and comment on the PR
-    push_results(pr_number)
-
-def run_tests(repo_dir):
+def run_tests(django_project_path):
     try:
-        # Run pytest with coverage
+        # Run Django tests with coverage
         subprocess.run(
-            ["pytest", "--cov-report=html", "--cov=inventory"],
-            cwd=repo_dir,
+            ["python", "manage.py", "test"],
+            cwd=django_project_path,
             check=True
         )
         print("Tests ran successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Error running tests: {e}")
         return jsonify({"message": "Failed to run tests"}), 500
+# def run_tests(repo_dir):
+#     try:
+#         # Run pytest with coverage
+#         subprocess.run(
+#             ["pytest", "--cov-report=html", "--cov=inventory"],
+#             cwd=repo_dir,
+#             check=True
+#         )
+#         print("Tests ran successfully.")
+#     except subprocess.CalledProcessError as e:
+#         print(f"Error running tests: {e}")
+#         return jsonify({"message": "Failed to run tests"}), 500
 
 def push_results(pr_number):
     results_repo_dir = "/tmp/tests-repo"
