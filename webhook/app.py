@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify
 import os
-import subprocess # used fro command run 
+import subprocess
 import requests
 import git
 from dotenv import load_dotenv
-import base64
+import shutil  # to copy entire directories
+
 
 
 # Load environment variables from .env file
@@ -16,27 +17,23 @@ app = Flask(__name__)
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 TEST_TOKEN = os.getenv("TEST_TOKEN")
 
-
-#created variables for reuse 
+# Define variables for repository URLs
 TESTS_REPO = f"https://{TEST_TOKEN}@github.com/kartikvermaa/tests-repo.git"
 DJANGO_REPO = f"https://{GITHUB_TOKEN}@github.com/rtiwari13/inventory-management-application.git"
 
-
-#webhook listener code 
+# Webhook listener endpoint
 @app.route("/webhook", methods=["POST"])
 def webhook_listener():
     data = request.json
-    if data.get("action") in ["opened", "synchronize"]:    # action == PR 
-       # pr_url = data["pull_request"]["html_url"]
-        pr_number = data["number"]                         # variable for PR no. 
+    if data.get("action") in ["opened", "synchronize"]:  # PR events
+        pr_number = data["number"]
         handle_pr(pr_number)
     return jsonify({"message": "Received"}), 200
 
-
-# handle prs 
 def handle_pr(pr_number):
-    repo_dir = "/tmp/django-repo"  # initializing our Project dir 
-   
+    repo_dir = "/tmp/django-repo"
+
+    # Remove directory if it exists
     if os.path.exists(repo_dir):
         subprocess.run(["rm", "-rf", repo_dir])
 
@@ -44,10 +41,11 @@ def handle_pr(pr_number):
         # Clone the private Django repo
         git.Repo.clone_from(DJANGO_REPO, repo_dir)
         print("Repository cloned successfully.")
-        django_project_path = os.path.join(repo_dir, "inventory")     # inside the django repo   /inventory 
-       
-      
-        run_tests(django_project_path)                              
+        django_project_path = os.path.join(repo_dir, "inventory")
+
+        # Run tests with coverage and pytest to generate reports
+        run_tests(django_project_path)
+        
         # Push test results and comment on the PR
         push_results(pr_number)
     except Exception as e:
@@ -56,33 +54,39 @@ def handle_pr(pr_number):
 
 def run_tests(django_project_path):
     try:
-        # Install dependencies for code coverage if not already installed
-        subprocess.run(["pip", "install", "coverage"], check=True)
+        # Install dependencies for both coverage and pytest
+        subprocess.run(["pip", "install", "coverage", "pytest", "pytest-django", "pytest-html"], check=True)
 
-        # Run Django tests with coverage
+        # Run Django tests with coverage and generate the HTML coverage report
         subprocess.run(
             ["coverage", "run", "--source=.", "manage.py", "test"],
             cwd=django_project_path,
             check=True
         )
-
-        # Generate the HTML report
         subprocess.run(
             ["coverage", "html", "--directory=htmlcov"],
             cwd=django_project_path,
             check=True
         )
-        print("HTML coverage report generated successfully.")
-        
+        print("Coverage HTML report generated successfully.")
+
+        # Run pytest with Django settings and generate report.html
+        subprocess.run(
+            ["pytest", "--ds=inventory.settings", "--html=report.html"],
+            cwd=django_project_path,
+            check=True
+        )
+        print("Test report generated successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Error running tests: {e}")
 
-#suceess in this we get comment and we can see live report 
+
 
 def push_results(pr_number):
     # Directory where the tests repo will be cloned
     tests_repo_dir = "/tmp/tests-repo"
-    # Create the directory if it doesn't exist
+    
+    # Remove directory if it exists
     if os.path.exists(tests_repo_dir):
         subprocess.run(["rm", "-rf", tests_repo_dir])
     
@@ -91,51 +95,77 @@ def push_results(pr_number):
         git.Repo.clone_from(TESTS_REPO, tests_repo_dir, branch="gh-pages")
         print("Tests repository cloned successfully.")
         
-        # Copy index.html from htmlcov to tests repo
+        # Create a unique directory for the PR within the tests repo
+        pr_dir = os.path.join(tests_repo_dir, f"pr-{pr_number}")
+        os.makedirs(pr_dir, exist_ok=True)
+
+        # Copy index.html (coverage report), report.html (pytest report), and the entire assets folder to the PR-specific directory
         index_html_source = os.path.join("/tmp/django-repo/inventory/htmlcov/index.html")
-        index_html_destination = os.path.join(tests_repo_dir, "index.html")                 # HTML file from django to test repo
+        index_html_destination = os.path.join(pr_dir, "index.html")
+        report_html_source = os.path.join("/tmp/django-repo/inventory/report.html")
+        report_html_destination = os.path.join(pr_dir, "report.html")
+        assets_source = os.path.join("/tmp/django-repo/inventory/assets") 
+        assets_destination = os.path.join(pr_dir, "assets")  # This will copy the 'assets' folder inside the pr-{pr_number} directory
         
-        if os.path.exists(index_html_source):
+        # Check if the source files exist before copying
+        if os.path.exists(index_html_source) and os.path.exists(report_html_source) and os.path.exists(assets_source):
+            # Copy the HTML files and the assets folder
             subprocess.run(["cp", index_html_source, index_html_destination])
-            print("index.html copied to tests repo.")
+            subprocess.run(["cp", report_html_source, report_html_destination])
+            
+            # Ensure assets folder gets copied properly
+            if os.path.isdir(assets_source):
+                shutil.copytree(assets_source, assets_destination)  # Copy the entire 'assets' folder
+                print(f"Assets folder copied to: {assets_destination}")
+            else:
+                print("Assets folder not found.")
+                return
+
+            print(f"Reports and assets copied to PR-specific directory: {pr_dir}")
         else:
-            print("index.html not found in coverage report.")
+            print("One or more files (reports or assets) not found.")
             return
 
         # Commit and push the changes to gh-pages branch
         repo = git.Repo(tests_repo_dir)
-        repo.index.add(["index.html"])
-        repo.index.commit("Update coverage report")
+        repo.index.add([f"pr-{pr_number}/index.html", f"pr-{pr_number}/report.html", f"pr-{pr_number}/assets"])
+        repo.index.commit(f"Update reports and assets for PR #{pr_number}")
         repo.remotes.origin.push("gh-pages")
-        print("Coverage report pushed to tests repo successfully.")
+        print("Coverage report, test report, and assets folder pushed to tests repo successfully.")
         
-        # Construct the URL to the index.html file in GitHub Pages
-        report_url = f"https://kartikvermaa.github.io/tests-repo/index.html"            #github pages 
+        # Construct the URLs to the reports and assets in GitHub Pages
+        coverage_url = f"https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/index.html"
+        test_report_url = f"https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/report.html"
+        assets_url = f"https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/assets/style.css"
         
-        # Post a comment on the PR with the URL to the report
-        post_comment(pr_number, report_url)
+        # Post a comment on the PR with the URLs to the reports and style.css
+        post_comment(pr_number, coverage_url, test_report_url, assets_url)
 
     except Exception as e:
         print(f"Error in push_results: {e}")
 
-def post_comment(pr_number, report_url):
+
+
+def post_comment(pr_number, coverage_url, test_report_url, assets_url):
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }
     
-    comment_body = f"Coverage report available at: {report_url}"
+    comment_body = (
+        f"Coverage report available at: {coverage_url}\n\n"
+        f"Test report available at: {test_report_url}\n\n"
+        f"Style file available at: {assets_url}"
+    )
     comment_url = f"https://api.github.com/repos/rtiwari13/inventory-management-application/issues/{pr_number}/comments"
     
-    response = requests.post(comment_url, json={"body": comment_body}, headers=headers)        # requests used for post comment url 
+    response = requests.post(comment_url, json={"body": comment_body}, headers=headers)
     
     if response.status_code == 201:
         print("Comment posted successfully.")
     else:
         print(f"Failed to post comment: {response.status_code} - {response.text}")
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
-
 
