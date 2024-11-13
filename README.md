@@ -1,11 +1,8 @@
 
 # Webhook Listener for Automated Testing and Reporting
 
-## Overview
-
-This Webhook Listener is designed to listen for GitHub pull request events and, when triggered, automatically clones the django repository, run tests, generate a coverage report along with test report and post the results back to the PR as a comment. This process ensures that developers receive instant feedback on their pull requests with test results and coverage.
+This Webhook Listener is designed to listen for GitHub pull request events and, when triggered, automatically clones the django repository, run tests, generate a coverage report along with test report and post the results back to the PR as a comment. This process ensures that developers receive instant feedback on their pull requests with test results and coverage.---
 ---
-
 ## Prerequisites
 
 - **Python 3.7+**
