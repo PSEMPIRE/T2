@@ -1,8 +1,7 @@
-
 # Webhook Listener for Automated Testing and Reporting
 
-This Webhook Listener is designed to listen for GitHub pull request events and, when triggered, automatically clones the django repository, run tests, generate a coverage report along with test report and post the results back to the PR as a comment. This process ensures that developers receive instant feedback on their pull requests with test results and coverage.---
----
+This Flask application listens to webhook events, clones specified GitHub repositories, runs tests, and posts reports back to the pull request (PR) as comments. This setup includes environment variables, dependency installation, and report generation. 
+
 ## Prerequisites
 
 - **Python 3.7+**
