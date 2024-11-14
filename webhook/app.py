@@ -3,24 +3,29 @@ import os
 import subprocess
 import requests
 import git
-from dotenv import load_dotenv
 import shutil  # to copy entire directories
+from environs import Env
 
 
+env = Env()
+env.read_env()
 
-# Load environment variables from .env file
-load_dotenv()
+
+# Retrieve environment variables
+GITHUB_TOKEN = env("GITHUB_TOKEN")
+print(GITHUB_TOKEN)
+
 
 app = Flask(__name__)
 
-# Retrieve environment variables
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-TEST_TOKEN = os.getenv("TEST_TOKEN")
 
 # Define variables for repository URLs
-TESTS_REPO = f"https://{TEST_TOKEN}@github.com/kartikvermaa/tests-repo.git"
-DJANGO_REPO = f"https://{GITHUB_TOKEN}@github.com/rtiwari13/inventory-management-application.git"
+TESTS_REPO=f"https://{GITHUB_TOKEN}@github.com/PSEMPIRE/test_repo.git"
+DJANGO_REPO = f"https://{GITHUB_TOKEN}@github.com/PSEMPIRE/Inventory_App.git"
 
+@app.route("/",methods=["GET"])
+def test():
+    return jsonify({"message":"hello world"})
 # Webhook listener endpoint
 @app.route("/webhook", methods=["POST"])
 def webhook_listener():
@@ -31,6 +36,7 @@ def webhook_listener():
     return jsonify({"message": "Received"}), 200
 
 def handle_pr(pr_number):
+
     repo_dir = "/tmp/django-repo"
 
     # Remove directory if it exists
@@ -134,9 +140,9 @@ def push_results(pr_number):
         print("Coverage report, test report, and assets folder pushed to tests repo successfully.")
         
         # Construct the URLs to the reports and assets in GitHub Pages
-        coverage_url = f"https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/index.html"
-        test_report_url = f"https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/report.html"
-        assets_url = f"https://kartikvermaa.github.io/tests-repo/pr-{pr_number}/assets/style.css"
+        coverage_url = f"https://psempire.github.io/test_repo/pr-{pr_number}/index.html"
+        test_report_url = f"https://psempire.github.io/test_repo/pr-{pr_number}/report.html"
+        assets_url = f"https://psempire.github.io/test_repo/pr-{pr_number}/assets/style.css"
         
         # Post a comment on the PR with the URLs to the reports and style.css
         post_comment(pr_number, coverage_url, test_report_url, assets_url)
@@ -157,7 +163,7 @@ def post_comment(pr_number, coverage_url, test_report_url, assets_url):
         f"Test report available at: {test_report_url}\n\n"
         f"Style file available at: {assets_url}"
     )
-    comment_url = f"https://api.github.com/repos/rtiwari13/inventory-management-application/issues/{pr_number}/comments"
+    comment_url = f"https://api.github.com/repos/PSEMPIRE/Inventory_App/issues/{pr_number}/comments"
     
     response = requests.post(comment_url, json={"body": comment_body}, headers=headers)
     
@@ -168,4 +174,5 @@ def post_comment(pr_number, coverage_url, test_report_url, assets_url):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
+    
 
